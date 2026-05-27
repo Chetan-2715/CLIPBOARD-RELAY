@@ -33,6 +33,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.proto
 
 import VolumetricBeamsFullScreen from './components/ui/volumetric-beams';
 import TubesCursor from './components/ui/tubes-cursor';
+import { NestedSquares } from './components/ui/bloom';
 
 /* ================= MAIN APPLICATION ================= */
 function App() {
@@ -73,11 +74,11 @@ function App() {
   });
   const pipelineLength = useTransform(scrollYProgress, [0.05, 0.95], [0, 1]);
 
-  // Remove preloader after 2 seconds
+  // Remove preloader after 3 seconds (single animation loop)
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowPreloader(false);
-    }, 2000);
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -491,8 +492,8 @@ function App() {
             transition={{ duration: 0.6, ease: "easeInOut" }}
             className="fixed inset-0 z-50 bg-[#020306] flex flex-col items-center justify-center"
           >
-            {/* Spinning 3D Favicon Icon */}
-            <div className="w-[120px] h-[120px] perspective-1000 flex items-center justify-center mb-8">
+            {/* Blooming Portal with Spinning 3D Favicon Icon inside */}
+            <NestedSquares className="mb-8">
               <div className="w-[70px] h-[80px] preserve-3d animate-spin-3d-favicon relative">
                 
                 {/* Clipboard Card Base Layer */}
@@ -513,7 +514,7 @@ function App() {
                 </div>
 
               </div>
-            </div>
+            </NestedSquares>
 
             <motion.h2
               initial={{ letterSpacing: "0.1em", opacity: 0 }}
