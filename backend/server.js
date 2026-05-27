@@ -45,7 +45,7 @@ const server = http.createServer(app);
 // Configure CORS
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
   ? process.env.ALLOWED_ORIGINS.split(',') 
-  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  : ['http://localhost:5173', 'http://127.0.0.1:5173', '*'];
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -171,7 +171,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
