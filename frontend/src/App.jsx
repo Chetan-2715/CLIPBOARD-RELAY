@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import confetti from 'canvas-confetti';
-import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import { 
   Clipboard, 
   UploadCloud, 
@@ -21,25 +20,20 @@ import {
   RefreshCw,
   Download,
   Terminal,
-  Activity,
   ChevronDown,
   Folder,
-  Image
+  Image,
+  Activity,
+  Zap,
+  ShieldCheck
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import ScrollExpandMedia from './components/ui/scroll-expansion-hero';
 
 // Resolve backend url dynamically to support local network device connection (PCs & Phones)
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:3000`;
 
-import VolumetricBeamsFullScreen from './components/ui/volumetric-beams';
-import TubesCursor from './components/ui/tubes-cursor';
-import { NestedSquares } from './components/ui/bloom';
-
-/* ================= MAIN APPLICATION ================= */
 function App() {
-  // Preloader state
-  const [showPreloader, setShowPreloader] = useState(true);
-
   // Room states
   const [roomCode, setRoomCode] = useState(null);
   const [items, setItems] = useState([]);
@@ -59,28 +53,24 @@ function App() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [latency, setLatency] = useState(0);
 
-  // 3D Tilt coordinates state
-  const [tiltOffset, setTiltOffset] = useState({ x: 0, y: 0 });
+  const [showIntro, setShowIntro] = useState(() => {
+    // If joining a room link directly, bypass intro
+    const path = window.location.pathname;
+    const isRoomLink = /^\/room\/([A-Z2-9]{6})$/i.test(path);
+    if (isRoomLink) return false;
+    
+    // Otherwise, check session storage
+    return sessionStorage.getItem('clipboard_relay_intro_played') !== 'true';
+  });
+
+  const handleSkipIntro = () => {
+    sessionStorage.setItem('clipboard_relay_intro_played', 'true');
+    setShowIntro(false);
+  };
 
   // References
   const socketRef = useRef(null);
   const fileInputRef = useRef(null);
-  const timelineRef = useRef(null);
-
-  // Scroll Progress calculations for Timeline
-  const { scrollYProgress } = useScroll({
-    target: timelineRef,
-    offset: ["start end", "end end"]
-  });
-  const pipelineLength = useTransform(scrollYProgress, [0.05, 0.95], [0, 1]);
-
-  // Remove preloader after 3 seconds (single animation loop)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowPreloader(false);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
 
   // Auto-join if room code is in the URL pathname: /room/XYZ123
   useEffect(() => {
@@ -91,7 +81,7 @@ function App() {
       const code = roomMatch[1].toUpperCase();
       joinRoom(code);
     }
-  }, [showPreloader]);
+  }, []);
 
   // Measure latency to show connection indicator
   useEffect(() => {
@@ -206,8 +196,8 @@ function App() {
       initializeSocket(data.roomCode);
       
       confetti({
-        particleCount: 100,
-        spread: 70,
+        particleCount: 80,
+        spread: 50,
         origin: { y: 0.6 },
         colors: ['#a855f7', '#ec4899', '#3b82f6']
       });
@@ -243,8 +233,8 @@ function App() {
       initializeSocket(data.roomCode);
       
       confetti({
-        particleCount: 50,
-        spread: 50,
+        particleCount: 40,
+        spread: 40,
         colors: ['#a855f7', '#3b82f6']
       });
     } catch (err) {
@@ -270,15 +260,15 @@ function App() {
     setInputText('');
     
     confetti({
-      particleCount: 40,
+      particleCount: 20,
       angle: 60,
-      spread: 55,
+      spread: 35,
       origin: { x: 0 }
     });
     confetti({
-      particleCount: 40,
+      particleCount: 20,
       angle: 120,
-      spread: 55,
+      spread: 35,
       origin: { x: 1 }
     });
   };
@@ -320,9 +310,9 @@ function App() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       
       confetti({
-        particleCount: 80,
-        spread: 60,
-        colors: ['#10b981', '#34d399', '#3b82f6']
+        particleCount: 40,
+        spread: 40,
+        colors: ['#10b981', '#3b82f6']
       });
     } catch (err) {
       console.error(err);
@@ -356,7 +346,7 @@ function App() {
   // Actions: Clear Entire Session
   const triggerClearSession = () => {
     if (!socketRef.current || !roomCode) return;
-    if (window.confirm("Are you sure you want to immediately wipe all data in this session? This deletes everything from Redis and disconnects all connected devices.")) {
+    if (window.confirm("Immediately delete all files/texts in this session? This wipes Redis keys and disconnects all connected devices.")) {
       socketRef.current.emit('clear-session', { roomCode });
     }
   };
@@ -367,8 +357,8 @@ function App() {
     setCopiedId(itemId);
     
     confetti({
-      particleCount: 15,
-      spread: 20,
+      particleCount: 10,
+      spread: 15,
       colors: ['#a855f7', '#ec4899']
     });
 
@@ -412,856 +402,631 @@ function App() {
     return false;
   };
 
-  // Handle Mouse Tilt calculations
-  const handleMouseMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5; // range -0.5 to 0.5
-    const y = (e.clientY - rect.top) / rect.height - 0.5; // range -0.5 to 0.5
-    setTiltOffset({ x, y });
-  };
-
-  const handleMouseLeave = () => {
-    setTiltOffset({ x: 0, y: 0 });
-  };
-
-  // Tilt Style Coordinates
-  const interactive3DTilt = {
-    transform: `rotateY(${-15 + tiltOffset.x * 20}deg) rotateX(${10 - tiltOffset.y * 15}deg)`,
-    transition: 'transform 0.1s ease-out'
-  };
-
-  const revealVariants = {
-    hidden: { opacity: 0, scale: 0.98, filter: 'blur(12px)' },
-    visible: { 
-      opacity: 1, 
-      scale: 1, 
-      filter: 'blur(0px)',
-      transition: { duration: 1.2, ease: [0.16, 1, 0.3, 1], delay: 0.15 }
-    }
-  };
+  if (showIntro) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#08090d] flex flex-col items-center justify-center overflow-hidden">
+        {/* Video Player */}
+        <video
+          src="/intro.mp4"
+          autoPlay
+          muted
+          playsInline
+          onEnded={handleSkipIntro}
+          className="w-full h-full object-cover md:object-contain"
+        />
+        
+        {/* Skip Button */}
+        <button
+          onClick={handleSkipIntro}
+          className="absolute bottom-8 right-8 px-6 py-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 text-white font-semibold text-xs tracking-wider uppercase transition-all duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 flex items-center space-x-2 z-50 cursor-pointer"
+        >
+          <span>Skip Intro</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden">
-      {/* Background Volumetric Shader Beams */}
-      <VolumetricBeamsFullScreen
-        className="fixed inset-0 bg-[#020306] z-[-10]"
-        dpr={[1, 1.5]}
-        speed={0.25}
-        autoRotateSpeed={0.015}
-        mouseInfluence={0.45}
-        pointerSmoothing={0.18}
-        cameraRadius={3.8}
-        fov={1.65}
-        beamCount={5}
-        beamHalfAngle={0.085}
-        beamEdgeSoft={0.045}
-        beamRotation={0.0}
-        twistDepth={0.06}
-        density={1.15}
-        falloff={0.55}
-        anisotropy={0.76}
-        lightIntensity={2.2}
-        lightColor={[0.64, 0.74, 1.0]}
-        stripeFreq={42.0}
-        stripeAmp={0.55}
-        stripeSharp={1.85}
-        stripeSpeed={0.12}
-        stripeJitter={0.25}
-        volSteps={80}
-        stepMin={0.015}
-        stepMax={0.06}
-        maxDist={18.0}
-        bgColor={[0.02, 0.015, 0.03]}
-        tint={[0.55, 0.58, 0.95]}
-        grainAmount={0.045}
-        vignette={0.35}
-        exposure={1.05}
-        gamma={2.0}
-      />
+    <div className="min-h-screen flex flex-col relative overflow-hidden bg-[#08090d]">
+      {/* High-performance CSS background */}
+      <div className="minimalist-bg" />
 
-      {/* Interactive 3D Cursor Trails */}
-      <TubesCursor className="fixed inset-0 pointer-events-none z-[1]" />
-
-      {/* ================= GRAND PRELOADER OVERLAY ================= */}
-      <AnimatePresence>
-        {showPreloader && (
-          <motion.div
-            key="preloader"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: "easeInOut" }}
-            className="fixed inset-0 z-50 bg-[#020306] flex flex-col items-center justify-center"
-          >
-            {/* Blooming Portal with Spinning 3D Favicon Icon inside */}
-            <NestedSquares className="mb-8">
-              <div className="w-[70px] h-[80px] preserve-3d animate-spin-3d-favicon relative">
-                
-                {/* Clipboard Card Base Layer */}
-                <div 
-                  className="absolute inset-0 rounded-2xl border-2 border-primary/50 bg-[#08090f] shadow-2xl flex items-center justify-center"
-                  style={{ transform: 'translateZ(-8px)' }}
-                >
-                  {/* Top Metallic Clip */}
-                  <div className="absolute -top-1 w-8 h-3 rounded-b-md bg-[#1b1c24] border border-primary/30" />
+      {!roomCode ? (
+        /* ================= MINIMALIST HERO LANDING SCREEN WITH SCROLL EXPANSION HERO ================= */
+        <ScrollExpandMedia
+          mediaType="video"
+          mediaSrc="/hero.mp4"
+          bgImageSrc="/bg.png"
+          title="Clipboard Relay"
+          date="Instant & Ephemeral"
+          scrollToExpand="Scroll to Connect Devices"
+          textBlend
+        >
+          <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 z-10 flex flex-col items-center space-y-16">
+            
+            {/* Split layout: Text on left, 2D Animation on right */}
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center pt-6">
+              
+              {/* Left Column: Value Proposition & Action Area */}
+              <div className="space-y-6 text-left max-w-lg">
+                <div className="inline-flex items-center space-x-2 py-1 px-3 bg-primary/10 border border-primary/20 rounded-full text-xs font-semibold text-primary">
+                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <span>Minimalist Zero-Lag Relay</span>
                 </div>
 
-                {/* Floating Neon Document Page Layer */}
-                <div 
-                  className="absolute inset-x-2.5 inset-y-4 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/20 border border-primary/40 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg shadow-primary/10"
-                  style={{ transform: 'translateZ(8px)' }}
-                >
-                  <Sparkles className="w-5 h-5 text-white text-glow-primary animate-pulse" />
-                </div>
-
-              </div>
-            </NestedSquares>
-
-            <motion.h2
-              initial={{ letterSpacing: "0.1em", opacity: 0 }}
-              animate={{ letterSpacing: "0.25em", opacity: 1 }}
-              transition={{ duration: 1.5 }}
-              className="text-white text-sm font-semibold uppercase tracking-widest font-mono text-glow-primary"
-            >
-              Initializing Secure Relay...
-            </motion.h2>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Container with smooth grand reveal fade/scale effect */}
-      <motion.main 
-        initial="hidden"
-        animate={showPreloader ? "hidden" : "visible"}
-        variants={revealVariants}
-        className="flex-grow flex flex-col items-center justify-center max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 z-10 space-y-24"
-      >
-        
-        <AnimatePresence mode="wait">
-          {!roomCode ? (
-            /* ================= 3D HERO LANDING SCREEN ================= */
-            <motion.div 
-              key="landing"
-              className="w-full flex flex-col items-center space-y-16"
-            >
-              {/* Hero Two-Column Layout */}
-              <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center pt-8">
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+                  Instant Ephemeral <br/>
+                  <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent text-glow-primary">
+                    Clipboard & File Relay
+                  </span>
+                </h1>
                 
-                {/* Left Column: Title & Actions */}
-                <motion.div 
-                  initial={{ opacity: 0, x: -30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.6, delay: 0.2 }}
-                  className="space-y-8 text-left max-w-xl"
-                >
-                  <div className="inline-flex items-center space-x-2 py-1 px-3 bg-primary/10 border border-primary/20 rounded-full text-xs font-semibold text-primary">
-                    <Sparkles className="w-3.5 h-3.5 text-glow-primary" />
-                    <span>Real-time Ephemeral Data Sync</span>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  A high-speed, secure link between your workstation and mobile phone. Instantly sync copy-pastes and upload files up to 10MB. All data auto-expires from memory after 15 minutes.
+                </p>
+
+                {/* Error Box */}
+                {error && (
+                  <div className="p-3 rounded-lg bg-red-900/20 border border-red-500/20 text-red-300 text-xs flex items-start space-x-2">
+                    <span className="font-bold">Error:</span>
+                    <span>{error}</span>
                   </div>
+                )}
 
-                  <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-white leading-tight">
-                    Secure Ephemeral <br/>
-                    <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent text-glow-primary">
-                      Clipboard & File Relay
-                    </span>
-                  </h1>
+                {/* Join/Create Panel */}
+                <div className="glass-card p-5 rounded-xl border border-white/5 shadow-xl relative overflow-hidden space-y-4">
+                  <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-primary to-secondary" />
                   
-                  <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-                    A secure, serverless bridge between your desktop workstation and mobile phone. Instantly sync formatted code blocks and upload files. Data automatically self-destructs after 15 minutes.
-                  </p>
-
-                  {/* Error Message Box */}
-                  {error && (
-                    <div className="p-3.5 rounded-xl bg-red-900/25 border border-red-500/20 text-red-300 text-xs flex items-start space-x-2 animate-pulse">
-                      <span className="font-bold">Error:</span>
-                      <span>{error}</span>
-                    </div>
-                  )}
-
-                  {/* Join/Create Interface Panel */}
-                  <div className="glass-card p-5 sm:p-6 rounded-2xl border border-white/5 shadow-xl relative overflow-hidden space-y-5">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-secondary" />
-                    
-                    <div>
-                      <label htmlFor="room-code-input" className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2.5">
-                        Have a Room Code?
-                      </label>
-                      <div className="flex relative rounded-xl shadow-inner bg-black/40">
-                        <input
-                          id="room-code-input"
-                          type="text"
-                          maxLength={6}
-                          placeholder="ENTER CODE"
-                          value={inputRoomCode}
-                          onChange={(e) => setInputRoomCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))}
-                          className="glass-input block w-full px-4 py-3 text-center text-lg font-mono tracking-widest rounded-l-xl uppercase font-bold placeholder:tracking-normal placeholder:font-sans placeholder:text-sm placeholder:text-gray-500 focus:z-10 bg-transparent border-0 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => joinRoom(inputRoomCode)}
-                          disabled={loading || inputRoomCode.length !== 6}
-                          className="inline-flex items-center px-5 py-2 text-sm font-bold rounded-r-xl text-white bg-primary hover:bg-primary-dark transition duration-150 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                        >
-                          {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="relative flex items-center justify-center py-1">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-white/5"></div>
-                      </div>
-                      <span className="relative px-3 bg-[#06070b] text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        Or Create Room
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={createRoom}
-                      disabled={loading}
-                      className="w-full py-3.5 px-4 rounded-xl font-bold text-white bg-gradient-to-r from-primary to-secondary hover:opacity-95 transition shadow-lg shadow-primary/20 cursor-pointer flex items-center justify-center space-x-2"
-                    >
-                      {loading ? (
-                        <RefreshCw className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4 text-glow-primary" />
-                          <span>Generate Temporary Room</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-
-                {/* Right Column: 3D Side-by-Side Device & File Particle Loop Scene */}
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.8, delay: 0.3 }}
-                  className="w-full flex items-center justify-center py-6 perspective-1000 min-h-[360px] overflow-hidden"
-                >
-                  <div 
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
-                    style={interactive3DTilt}
-                    className="relative w-[500px] h-[320px] preserve-3d transition-transform flex items-center justify-center select-none scale-75 sm:scale-90 md:scale-100"
-                  >
-                    
-                    {/* Outward flying file particles (Laptop -> Phone) */}
-                    {[
-                      { id: 1, icon: FileText, label: 'notes.txt', delay: 0, color: '#a855f7' },
-                      { id: 2, icon: Image, label: 'image.png', delay: 1.3, color: '#ec4899' },
-                      { id: 3, icon: Folder, label: 'src_code/', delay: 2.6, color: '#3b82f6' }
-                    ].map((file) => {
-                      const FileIcon = file.icon;
-                      return (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0 }}
-                          animate={{
-                            x: [0, 140, 280, 360],
-                            y: [0, -110, -110, -30],
-                            opacity: [0, 1, 1, 0],
-                            scale: [0.6, 1, 1, 0.6]
-                          }}
-                          transition={{
-                            duration: 4,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: file.delay
-                          }}
-                          className="absolute left-[80px] top-[140px] px-2.5 py-1 rounded-full border bg-[#050609]/95 text-[9px] font-mono flex items-center space-x-1.5 shadow-lg pointer-events-none z-20"
-                          style={{ 
-                            borderColor: `${file.color}40`,
-                            color: file.color,
-                            boxShadow: `0 4px 15px -3px ${file.color}20`
-                          }}
-                        >
-                          <FileIcon className="w-3.5 h-3.5" />
-                          <span>{file.label}</span>
-                        </motion.div>
-                      );
-                    })}
-
-                    {/* Return flying file particles (Phone -> Laptop) */}
-                    {[
-                      { id: 4, icon: Terminal, label: 'build_log', delay: 0.6, color: '#a855f7' },
-                      { id: 5, icon: FileText, label: 'data.json', delay: 1.9, color: '#3b82f6' },
-                      { id: 6, icon: Lock, label: 'token.key', delay: 3.2, color: '#10b981' }
-                    ].map((file) => {
-                      const FileIcon = file.icon;
-                      return (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0 }}
-                          animate={{
-                            x: [360, 280, 140, 0],
-                            y: [-30, 80, 80, 0],
-                            opacity: [0, 1, 1, 0],
-                            scale: [0.6, 1, 1, 0.6]
-                          }}
-                          transition={{
-                            duration: 4,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: file.delay
-                          }}
-                          className="absolute left-[80px] top-[140px] px-2.5 py-1 rounded-full border bg-[#050609]/95 text-[9px] font-mono flex items-center space-x-1.5 shadow-lg pointer-events-none z-20"
-                          style={{ 
-                            borderColor: `${file.color}40`,
-                            color: file.color,
-                            boxShadow: `0 4px 15px -3px ${file.color}20`
-                          }}
-                        >
-                          <FileIcon className="w-3.5 h-3.5" />
-                          <span>{file.label}</span>
-                        </motion.div>
-                      );
-                    })}
-
-                    {/* Left side Laptop Mockup */}
-                    <div 
-                      className="absolute left-0 top-[90px] w-[180px] preserve-3d"
-                      style={{ transform: 'rotateY(12deg) rotateX(4deg)' }}
-                    >
-                      {/* Screen */}
-                      <div className="w-full aspect-[16/10] bg-[#0c0d15] rounded-t-xl border border-white/10 p-1.5 shadow-2xl relative">
-                        <div className="w-full h-full bg-[#030407] rounded border border-white/5 p-2 flex flex-col font-mono text-[8px] text-gray-400 text-left overflow-hidden">
-                          <div className="flex items-center space-x-1 border-b border-white/5 pb-1 mb-1.5 text-[7px] text-gray-500">
-                            <Terminal className="w-2.5 h-2.5 text-primary" />
-                            <span>CLI Bridge</span>
-                          </div>
-                          <span className="text-emerald-400 font-semibold">$ npm run dev</span>
-                          <span className="text-primary font-bold text-[7px]">Room active: {roomCode || 'BRIDGE'}</span>
-                          <div className="w-full h-0.5 bg-primary/20 mt-1 animate-pulse" />
-                        </div>
-                      </div>
-                      {/* Base */}
-                      <div 
-                        className="w-full h-[100px] bg-[#222329] rounded-b-xl border-t border-white/30 relative flex flex-col items-center p-2" 
-                        style={{ transform: 'rotateX(75deg)', transformOrigin: 'top' }}
+                  <div>
+                    <label htmlFor="room-code" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                      Have a Room Code?
+                    </label>
+                    <div className="flex relative rounded-lg bg-black/40 overflow-hidden border border-white/5 focus-within:border-primary/50 transition">
+                      <input
+                        id="room-code"
+                        type="text"
+                        maxLength={6}
+                        placeholder="ENTER 6-CHAR CODE"
+                        value={inputRoomCode}
+                        onChange={(e) => setInputRoomCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))}
+                        className="glass-input block w-full px-4 py-2.5 text-center text-md font-mono tracking-widest uppercase font-bold placeholder:tracking-normal placeholder:font-sans placeholder:text-xs placeholder:text-gray-500 bg-transparent border-0 outline-none focus:ring-0"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => joinRoom(inputRoomCode)}
+                        disabled={loading || inputRoomCode.length !== 6}
+                        className="inline-flex items-center px-4 bg-primary hover:bg-primary-dark transition text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       >
-                        <div className="w-14 h-6 rounded border border-black/50 bg-[#16171b] shadow-inner mt-2" />
-                      </div>
+                        {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                      </button>
                     </div>
-
-                    {/* Right side Phone Mockup */}
-                    <div 
-                      className="absolute right-0 top-[70px] w-[85px] aspect-[9/18] bg-[#0c0d15] rounded-2xl border border-white/15 p-1.5 shadow-2xl animate-bob preserve-3d z-10"
-                      style={{ transform: 'rotateY(-12deg) rotateX(4deg)' }}
-                    >
-                      <div className="w-full h-full bg-[#030407] rounded-xl border border-white/5 p-1.5 flex flex-col font-sans overflow-hidden text-[7px] text-left relative">
-                        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-2 bg-black rounded-full border border-white/5" />
-                        
-                        <div className="mt-3 flex flex-col space-y-1 overflow-hidden">
-                          <span className="text-gray-500 uppercase tracking-wider text-[5px]">Active Relay</span>
-                          <div className="p-1 rounded bg-primary/15 border border-primary/20 text-[5px] font-mono text-gray-300">
-                            sync: ready
-                          </div>
-                        </div>
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-1/3 h-0.5 bg-white/20 rounded-full" />
-                      </div>
-                    </div>
-
                   </div>
-                </motion.div>
+
+                  <div className="relative flex items-center justify-center py-0.5">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-white/5"></div>
+                    </div>
+                    <span className="relative px-3 bg-[#08090d] text-[9px] font-bold text-gray-500 uppercase tracking-wider">
+                      Or
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={createRoom}
+                    disabled={loading}
+                    className="w-full py-2.5 px-4 rounded-lg font-bold text-xs text-white bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition cursor-pointer flex items-center justify-center space-x-2 shadow-md shadow-primary/10"
+                  >
+                    {loading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Generate Temporary Room</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Bounce Down Arrow */}
-              <div className="flex flex-col items-center space-y-2 cursor-pointer mt-10">
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest font-mono">Learn How It Works</span>
-                <ChevronDown className="w-4 h-4 text-primary animate-bounce" />
+              {/* Right Column: Placeholder for Looping File-Transfer Animation */}
+              <div className="w-full flex items-center justify-center py-4">
+                <div className="relative w-full max-w-[380px] h-[200px] flex items-center justify-between p-6 bg-white/[0.015] border border-white/5 rounded-xl overflow-hidden shadow-inner">
+                  
+                  {/* Connection Line */}
+                  <div className="absolute left-[20%] right-[20%] top-1/2 h-[1px] border-t border-dashed border-white/10 z-0" />
+                  
+                  {/* Left Device: Desktop Card */}
+                  <div className="relative z-10 flex flex-col items-center bg-[#0c0d15] border border-white/10 rounded-lg p-3 w-[100px] shadow-lg">
+                    <Terminal className="w-5 h-5 text-primary mb-1" />
+                    <span className="text-[9px] font-mono text-gray-400">Desktop</span>
+                  </div>
+
+                  {/* Flowing File Badges Container */}
+                  <div className="absolute left-[105px] right-[95px] top-[30%] bottom-[30%] pointer-events-none z-20 overflow-hidden">
+                    {/* Outward Particle */}
+                    <div className="absolute top-[10%] left-0 px-2 py-0.5 rounded-full border border-primary/20 bg-[#0c0d15] text-[8px] font-mono text-primary flex items-center space-x-1 shadow-md animate-flow-lr">
+                      <FileText className="w-2.5 h-2.5" />
+                      <span>data.txt</span>
+                    </div>
+
+                    {/* Return Particle */}
+                    <div className="absolute bottom-[10%] left-0 px-2 py-0.5 rounded-full border border-secondary/20 bg-[#0c0d15] text-[8px] font-mono text-secondary flex items-center space-x-1 shadow-md animate-flow-rl">
+                      <Image className="w-2.5 h-2.5" />
+                      <span>photo.png</span>
+                    </div>
+                  </div>
+
+                  {/* Right Device: Mobile Card */}
+                  <div className="relative z-10 flex flex-col items-center bg-[#0c0d15] border border-white/10 rounded-lg p-3 w-[90px] shadow-lg">
+                    <Smartphone className="w-5 h-5 text-secondary mb-1" />
+                    <span className="text-[9px] font-mono text-gray-400">Mobile</span>
+                  </div>
+                </div>
               </div>
 
-              {/* ================= SCROLL-LINKED TIMELINE SECTION ================= */}
-              <section 
-                id="features-timeline"
-                ref={timelineRef}
-                className="w-full max-w-4xl py-12 relative flex flex-col items-center"
-              >
-                <div className="text-center mb-16 space-y-3">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white">How To Connect Devices</h2>
-                  <p className="text-sm text-gray-400 max-w-md mx-auto">
-                    Three simple steps to bridge your college workstation to your phone securely in seconds.
+            </div>
+
+            {/* ================= STATIC HOW IT WORKS SECTION ================= */}
+            <section className="w-full max-w-4xl py-6 border-t border-white/5">
+              <h2 className="text-center text-lg font-bold text-white mb-8">How it works</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* Step 1 */}
+                <div className="bg-white/[0.01] border border-white/5 rounded-xl p-5 space-y-2 text-left">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-xs font-mono text-primary font-bold">1</div>
+                  <h3 className="text-sm font-semibold text-white">Create Room</h3>
+                  <p className="text-xs text-gray-400 leading-normal">
+                    Generate a temporary, secure 6-character room code on your desktop.
                   </p>
                 </div>
 
-                {/* SVG Pipeline (animated by Scroll) */}
-                <div className="absolute left-4 md:left-1/2 top-40 bottom-16 w-1 -translate-x-1/2 z-0">
-                  {/* Gray Pipeline Background */}
-                  <div className="absolute inset-0 bg-white/5 rounded-full" />
-                  {/* Glowing Scroll Progress */}
-                  <motion.div 
-                    style={{ scaleY: pipelineLength }}
-                    className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-primary via-secondary to-accent rounded-full origin-top"
-                  />
+                {/* Step 2 */}
+                <div className="bg-white/[0.01] border border-white/5 rounded-xl p-5 space-y-2 text-left">
+                  <div className="w-6 h-6 rounded-full bg-secondary/10 border border-secondary/30 flex items-center justify-center text-xs font-mono text-secondary font-bold">2</div>
+                  <h3 className="text-sm font-semibold text-white">Scan & Join</h3>
+                  <p className="text-xs text-gray-400 leading-normal">
+                    Scan the QR code or enter the code on your mobile browser to bridge the devices.
+                  </p>
                 </div>
 
-                {/* Timeline Step Cards */}
-                <div className="w-full space-y-20 relative z-10 text-left">
-                  
-                  {/* Step 1 */}
-                  <div className="relative flex flex-col md:flex-row md:justify-between items-start md:items-center">
-                    {/* Left column (Text on Desktop) */}
-                    <motion.div 
-                      whileInView={{ opacity: [0, 1], x: [-35, 0] }}
-                      viewport={{ once: true, margin: "-100px" }}
-                      transition={{ duration: 0.7 }}
-                      className="w-full md:w-[45%] pl-12 md:pl-0 md:pr-10 md:text-right space-y-2 order-2 md:order-1"
-                    >
-                      <span className="font-mono text-xs font-bold text-primary text-glow-primary">STEP 01</span>
-                      <h3 className="text-xl font-bold text-white font-sans">Spawn a Temporary Session</h3>
-                      <p className="text-xs text-gray-400 leading-relaxed max-w-sm md:ml-auto">
-                        Click "Generate Temporary Room" to create a unique 6-character room code instantly.
-                      </p>
-                    </motion.div>
-                    
-                    {/* Center Node */}
-                    <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#020306] border-2 border-primary flex items-center justify-center text-primary font-mono text-xs font-bold shadow-lg shadow-primary/20 order-1 md:order-2">
-                      1
-                    </div>
-
-                    {/* Right column (Spacer on Desktop) */}
-                    <div className="hidden md:block w-[45%] order-3" />
-                  </div>
-
-                  {/* Step 2 */}
-                  <div className="relative flex flex-col md:flex-row md:justify-between items-start md:items-center">
-                    {/* Left column (Spacer on Desktop) */}
-                    <div className="hidden md:block w-[45%] order-1" />
-
-                    {/* Center Node */}
-                    <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#020306] border-2 border-secondary flex items-center justify-center text-secondary font-mono text-xs font-bold shadow-lg shadow-secondary/20 order-1 md:order-2">
-                      2
-                    </div>
-
-                    {/* Right column (Text on Desktop) */}
-                    <motion.div 
-                      whileInView={{ opacity: [0, 1], x: [35, 0] }}
-                      viewport={{ once: true, margin: "-100px" }}
-                      transition={{ duration: 0.7 }}
-                      className="w-full md:w-[45%] pl-12 md:pl-10 space-y-2 order-2 md:order-3"
-                    >
-                      <span className="font-mono text-xs font-bold text-secondary text-glow-secondary">STEP 02</span>
-                      <h3 className="text-xl font-bold text-white font-sans">Scan QR Code to Join</h3>
-                      <p className="text-xs text-gray-400 leading-relaxed max-w-sm">
-                        Open the QR code modal on your desktop, and scan it with your phone's camera to bridge devices instantly.
-                      </p>
-                    </motion.div>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className="relative flex flex-col md:flex-row md:justify-between items-start md:items-center">
-                    {/* Left column (Text on Desktop) */}
-                    <motion.div 
-                      whileInView={{ opacity: [0, 1], x: [-35, 0] }}
-                      viewport={{ once: true, margin: "-100px" }}
-                      transition={{ duration: 0.7 }}
-                      className="w-full md:w-[45%] pl-12 md:pl-0 md:pr-10 md:text-right space-y-2 order-2 md:order-1"
-                    >
-                      <span className="font-mono text-xs font-bold text-accent">STEP 03</span>
-                      <h3 className="text-xl font-bold text-white font-sans">Bridge Data & Wipe Cleans</h3>
-                      <p className="text-xs text-gray-400 leading-relaxed max-w-sm md:ml-auto">
-                        Instantly sync texts with whitespace indents preserved, and stream file relays up to 10MB to Cloudinary. Click "Wipe Data" to instantly clear Redis keys on exit.
-                      </p>
-                    </motion.div>
-
-                    {/* Center Node */}
-                    <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#020306] border-2 border-accent flex items-center justify-center text-accent font-mono text-xs font-bold shadow-lg shadow-accent/20 order-1 md:order-2">
-                      3
-                    </div>
-
-                    {/* Right column (Spacer on Desktop) */}
-                    <div className="hidden md:block w-[45%] order-3" />
-                  </div>
-
+                {/* Step 3 */}
+                <div className="bg-white/[0.01] border border-white/5 rounded-xl p-5 space-y-2 text-left">
+                  <div className="w-6 h-6 rounded-full bg-accent/10 border border-accent/30 flex items-center justify-center text-xs font-mono text-accent font-bold">3</div>
+                  <h3 className="text-sm font-semibold text-white">Sync & Self-Destruct</h3>
+                  <p className="text-xs text-gray-400 leading-normal">
+                    Sync copied items or relay files. Data self-destructs from memory in 15 minutes.
+                  </p>
                 </div>
-              </section>
-            </motion.div>
-          ) : (
-            /* ================= DASHBOARD / ACTIVE ROOM ================= */
-            <motion.div
-              key="dashboard"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.3 }}
-              className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 pt-6"
-            >
-              {/* Sidebar Panel: Room Info & Settings */}
-              <div className="lg:col-span-1 space-y-6">
+
+              </div>
+            </section>
+
+            {/* ================= DETAILED CAPABILITIES GRID SECTION ================= */}
+            <section className="w-full max-w-4xl py-10 border-t border-white/5">
+              <h2 className="text-center text-lg font-bold text-white mb-3">Core Capabilities</h2>
+              <p className="text-center text-xs text-gray-400 max-w-md mx-auto mb-10">
+                Packed with secure, developer-focused features designed for high efficiency and speed.
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                 
-                {/* Room code card */}
-                <div className="glass-card rounded-2xl p-5 relative overflow-hidden shadow-xl border border-white/5">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span>Active Session</span>
-                    <span className="flex items-center space-x-1 text-primary">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span className="text-[10px] text-gray-300 font-sans">Live Sync</span>
-                    </span>
-                  </h3>
-                  
-                  <div className="flex items-baseline space-x-2 mb-4">
-                    <span className="text-4xl font-mono font-black text-white tracking-wider">{roomCode}</span>
-                    <button 
-                      onClick={copyRoomLink}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition cursor-pointer"
-                      title="Copy join link"
-                    >
-                      {linkCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link className="w-4 h-4" />}
-                    </button>
+                {/* Feature 1 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-primary/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-primary/20">
+                    <Clipboard className="w-4 h-4" />
                   </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">Live Clipboard Sync</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Paste raw text or formatted code blocks. Spacing, tabs, and indentation are fully preserved across all synced devices.
+                  </p>
+                </div>
 
-                  {/* Share QR Code Button */}
-                  <button
-                    onClick={() => setShowQRModal(true)}
-                    className="w-full flex items-center justify-center space-x-2 py-2.5 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-gray-300 transition cursor-pointer"
+                {/* Feature 2 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-secondary/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-secondary/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-secondary/10 border border-secondary/20 flex items-center justify-center text-secondary mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-secondary/20">
+                    <UploadCloud className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">Cloudinary File Relay</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Drag and drop images, configs, or assets up to 10MB. Stream files directly and download them in one click.
+                  </p>
+                </div>
+
+                {/* Feature 3 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-accent/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-accent/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-accent/20">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">15-Minute Auto-Wipe</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    All stored clipboard keys and file entries in Upstash Redis self-destruct after 15 minutes of inactivity.
+                  </p>
+                </div>
+
+                {/* Feature 4 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-emerald-500/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-emerald-500/20">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">Zero-Account Setup</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    No sign-ups, email listings, or passwords required. Generate a temporary code and connect instantly.
+                  </p>
+                </div>
+
+                {/* Feature 5 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-orange-500/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-orange-500/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-orange-500/20">
+                    <QrCode className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">Instant QR Bridge</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Open the session QR code on your PC monitor, scan it with your phone's camera, and bridge devices instantly.
+                  </p>
+                </div>
+
+                {/* Feature 6 */}
+                <div className="group bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 rounded-xl p-5 text-left transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-cyan-500/5 cursor-default">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-4 transition duration-200 group-hover:scale-110 group-hover:bg-cyan-500/20">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-2">Completely Wiped on Exit</h3>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Wiping database keys is immediate. Click "Wipe Data" on exit to clear all Redis entries and unlink connected tabs instantly.
+                  </p>
+                </div>
+
+              </div>
+            </section>
+          </div>
+        </ScrollExpandMedia>
+      ) : (
+        /* ================= DASHBOARD / ACTIVE ROOM ================= */
+        <main className="flex-grow flex flex-col items-center justify-center max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 z-10">
+          <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+            
+            {/* Sidebar Panel: Room Info */}
+            <div className="md:col-span-1 space-y-6">
+              
+              {/* Room Code Card */}
+              <div className="glass-card rounded-xl p-5 relative overflow-hidden shadow-xl border border-white/5">
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                  <span>Session Room</span>
+                  <span className="flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-[9px] text-gray-300">Sync Active</span>
+                  </span>
+                </h3>
+                
+                <div className="flex items-baseline space-x-2 mb-4">
+                  <span className="text-3xl font-mono font-black text-white tracking-wider">{roomCode}</span>
+                  <button 
+                    onClick={copyRoomLink}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition cursor-pointer"
+                    title="Copy Room Link"
                   >
-                    <QrCode className="w-4 h-4 text-primary text-glow-primary" />
-                    <span>Scan with Mobile Device</span>
+                    {linkCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link className="w-4 h-4" />}
                   </button>
                 </div>
 
-                {/* Expiry / Countdown Timer Card */}
-                <div className="glass-card rounded-2xl p-5 shadow-xl border border-white/5">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center justify-between">
-                    <span>Time Remaining</span>
-                    <Clock className="w-4 h-4 text-secondary animate-pulse-slow" />
+                <button
+                  onClick={() => setShowQRModal(true)}
+                  className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-gray-300 transition cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4 text-primary" />
+                  <span>Scan QR Code</span>
+                </button>
+              </div>
+
+              {/* Countdown Card */}
+              <div className="glass-card rounded-xl p-5 shadow-xl border border-white/5">
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+                  <span>Expiration Countdown</span>
+                  <Clock className="w-4 h-4 text-secondary" />
+                </h3>
+                
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-2xl font-mono font-bold text-white tracking-widest">
+                    {formatTime(ttlRemaining)}
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-bold">MIN REMAINING</span>
+                </div>
+                
+                <p className="text-[10px] text-gray-500 mt-2">
+                  Refreshes back to 15:00 on every Clipboard Sync or File Upload.
+                </p>
+              </div>
+
+              {/* Session Termination Card */}
+              <div className="glass-card rounded-xl p-5 shadow-xl border border-white/5 space-y-3">
+                <div>
+                  <h3 className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-1">
+                    Terminate Session
                   </h3>
-                  
-                  <div className="flex items-baseline space-x-2">
-                    <span className="text-3xl font-mono font-bold text-white tracking-widest">
-                      {formatTime(ttlRemaining)}
-                    </span>
-                    <span className="text-xs text-gray-400 font-semibold">minutes</span>
-                  </div>
-                  
-                  <p className="text-[11px] text-gray-400 mt-2.5">
-                    TTL refreshes back to 15:00 on every new text sync or file upload!
+                  <p className="text-[10px] text-gray-400 leading-normal">
+                    Instantly wipes all synced clips from Redis and disconnects all socket sessions.
                   </p>
                 </div>
-
-                {/* Danger Actions Card */}
-                <div className="glass-card rounded-2xl p-5 shadow-xl border border-white/5 flex flex-col justify-between space-y-4">
-                  <div>
-                    <h3 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-1">
-                      Wipe Session
-                    </h3>
-                    <p className="text-xs text-gray-400 leading-normal">
-                      Leaving a shared PC? Instantly delete all keys from Redis and disconnect all sockets immediately.
-                    </p>
-                  </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      disconnectSocket();
+                      setRoomCode(null);
+                      setItems([]);
+                      window.history.pushState(null, '', '/');
+                    }}
+                    className="py-2 px-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 transition cursor-pointer text-center"
+                  >
+                    Exit Room
+                  </button>
                   
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => {
-                        disconnectSocket();
-                        setRoomCode(null);
-                        setItems([]);
-                        window.history.pushState(null, '', '/');
+                  <button
+                    onClick={triggerClearSession}
+                    className="py-2 px-3 rounded-lg bg-red-600/10 hover:bg-red-600 border border-red-500/20 text-xs font-semibold text-red-300 hover:text-white transition cursor-pointer text-center flex items-center justify-center space-x-1"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Wipe Data</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Sync Content Feed */}
+            <div className="md:col-span-2 space-y-6">
+              
+              {/* Sync form */}
+              <div className="glass-card rounded-xl p-5 shadow-xl border border-white/5">
+                <h2 className="text-md font-bold text-white mb-3 flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  <span>Sync New Data</span>
+                </h2>
+
+                {error && (
+                  <div className="mb-3 p-2.5 rounded-lg bg-red-900/20 border border-red-500/20 text-red-300 text-xs flex justify-between items-center">
+                    <span>{error}</span>
+                    <button onClick={() => setError(null)} className="text-red-300 hover:text-white">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div>
+                    <textarea
+                      rows={3}
+                      placeholder="Paste text, code snippets, or links to share..."
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      className="glass-input block w-full p-3 text-xs font-mono rounded-lg placeholder:font-sans placeholder:text-gray-500 focus:ring-0 focus:border-primary"
+                    ></textarea>
+                    <div className="mt-2 flex justify-between items-center">
+                      <span className="text-[10px] text-gray-500">
+                        Whitespace and indentation formats are preserved.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={syncText}
+                        disabled={!inputText.trim()}
+                        className="px-3.5 py-1.5 bg-primary hover:bg-primary-dark disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>Sync Clipboard</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-white/5"></div>
+                    </div>
+                    <span className="relative px-3 bg-[#08090d] text-[9px] font-bold text-gray-500 uppercase tracking-widest">
+                      Or
+                    </span>
+                  </div>
+
+                  {/* Dropzone */}
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    className={`border border-dashed rounded-lg p-5 text-center transition cursor-pointer ${
+                      dragActive 
+                        ? 'border-primary bg-primary/5' 
+                        : 'border-white/10 hover:border-white/20 bg-white/[0.005]'
+                    } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          uploadAndSyncFile(e.target.files[0]);
+                        }
                       }}
-                      className="py-2.5 px-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 transition cursor-pointer text-center"
-                    >
-                      Exit Room
-                    </button>
+                    />
                     
-                    <button
-                      onClick={triggerClearSession}
-                      className="py-2.5 px-3 rounded-xl bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-xs font-semibold text-red-300 hover:text-white transition cursor-pointer text-center flex items-center justify-center space-x-1.5"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Wipe Data</span>
-                    </button>
+                    {uploading ? (
+                      <div className="flex flex-col items-center justify-center py-1">
+                        <RefreshCw className="w-6 h-6 text-primary animate-spin mb-2" />
+                        <p className="text-xs font-semibold text-white">Uploading file directly to Cloudinary...</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-1">
+                        <UploadCloud className="w-6 h-6 text-gray-400 mb-2" />
+                        <p className="text-xs font-semibold text-gray-300">Drag & Drop file here or <span className="text-primary hover:underline">browse</span></p>
+                        <p className="text-[10px] text-gray-500 mt-1">Images, documents, configs (Max 10MB)</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Main Board Panel: Sync Inputs & Relay List */}
-              <div className="lg:col-span-2 space-y-6">
-                
-                {/* Sync input panel */}
-                <div className="glass-card rounded-2xl p-6 shadow-xl border border-white/5">
-                  <h2 className="text-lg font-bold text-white mb-4 flex items-center space-x-2">
-                    <Sparkles className="w-5 h-5 text-primary text-glow-primary" />
-                    <span>Sync New Data</span>
-                  </h2>
+              {/* Feed items */}
+              <div className="space-y-4">
+                <h2 className="text-sm font-bold text-white px-1">
+                  Synced Feed ({items.length})
+                </h2>
 
-                  {error && (
-                    <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-500/30 text-red-300 text-xs flex justify-between items-center">
-                      <span>{error}</span>
-                      <button onClick={() => setError(null)} className="text-red-300 hover:text-white">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="space-y-4">
-                    {/* Text sync textarea */}
-                    <div>
-                      <textarea
-                        rows={4}
-                        placeholder="Paste code snippet, lines of text, or links to share..."
-                        value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
-                        className="glass-input block w-full p-4 text-sm font-mono rounded-xl placeholder:font-sans placeholder:text-gray-500 focus:ring-1 focus:ring-primary focus:border-primary"
-                      ></textarea>
-                      <div className="mt-2.5 flex justify-between items-center">
-                        <span className="text-[11px] text-gray-500">
-                          Preserves spaces, tabs, and indentation format.
-                        </span>
-                        <button
-                          type="button"
-                          onClick={syncText}
-                          disabled={!inputText.trim()}
-                          className="px-4 py-2 bg-primary hover:bg-primary-dark disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-glow-primary" />
-                          <span>Sync Clipboard</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="relative flex items-center justify-center">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-white/5"></div>
-                      </div>
-                      <span className="relative px-3 bg-[#020306] text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        Or Upload File
-                      </span>
-                    </div>
-
-                    {/* File Dropzone */}
+                {items.length === 0 ? (
+                  <div className="glass-card rounded-xl p-6 text-center border border-white/5">
+                    <Clipboard className="w-8 h-8 text-gray-600 mx-auto mb-2 opacity-40" />
+                    <p className="text-xs text-gray-400">Empty room feed.</p>
+                  </div>
+                ) : (
+                  items.map((item, index) => (
                     <div
-                      onDragEnter={handleDrag}
-                      onDragOver={handleDrag}
-                      onDragLeave={handleDrag}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                      className={`border border-dashed rounded-xl p-6 text-center transition cursor-pointer ${
-                        dragActive 
-                          ? 'border-primary bg-primary/5' 
-                          : 'border-white/10 hover:border-white/20 bg-white/[0.01]'
-                      } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
+                      key={item.id || index}
+                      className="glass-card rounded-xl p-4 shadow-md border border-white/5 relative overflow-hidden transition"
                     >
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            uploadAndSyncFile(e.target.files[0]);
-                          }
-                        }}
-                      />
-                      
-                      {uploading ? (
-                        <div className="flex flex-col items-center justify-center py-2">
-                          <RefreshCw className="w-8 h-8 text-primary animate-spin mb-3" />
-                          <p className="text-sm font-semibold text-white">Uploading file directly to Cloudinary...</p>
-                          <p className="text-xs text-gray-400 mt-1">This will sync immediately once completed.</p>
+                      <div className={`absolute top-0 left-0 h-full w-[2px] ${
+                        item.type === 'file' ? 'bg-emerald-400' : 'bg-primary'
+                      }`} />
+
+                      <div className="flex justify-between items-center mb-2.5 text-[10px] text-gray-500 ml-1">
+                        <span className="font-semibold">
+                          {item.type === 'file' ? '📁 File' : '📝 Text'}
+                        </span>
+                        <span>
+                          {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {item.type === 'text' ? (
+                        <div className="relative">
+                          <pre className="whitespace-pre-wrap font-mono text-xs bg-black/40 p-3 rounded-lg border border-white/5 text-left text-gray-300 overflow-x-auto select-text break-all">
+                            {item.content}
+                          </pre>
+                          
+                          <button
+                            onClick={() => copyToClipboard(item.content, item.id)}
+                            className="absolute top-2 right-2 p-1.5 rounded-md bg-neutral-900/90 text-gray-400 hover:text-white border border-white/10 cursor-pointer shadow-md"
+                            title="Copy to Clipboard"
+                          >
+                            {copiedId === item.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         </div>
                       ) : (
-                        <div className="flex flex-col items-center justify-center py-2">
-                          <UploadCloud className="w-8 h-8 text-gray-400 mb-3 animate-pulse" />
-                          <p className="text-sm font-semibold text-gray-200">Drag & Drop file here or <span className="text-primary hover:underline">browse</span></p>
-                          <p className="text-xs text-gray-500 mt-1">Images, PDFs, Docs, etc. (Max 10MB)</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                        <div className="flex items-center space-x-3 bg-black/40 p-3 rounded-lg border border-white/5">
+                          {isImage(item.fileType, item.fileName) ? (
+                            <a 
+                              href={item.content} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="w-12 h-12 rounded overflow-hidden border border-white/10 bg-black/25 flex items-center justify-center flex-shrink-0 cursor-zoom-in"
+                            >
+                              <img 
+                                src={item.content} 
+                                alt={item.fileName} 
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                          )}
 
-                {/* Shared Clipboard Feed */}
-                <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-white px-1">
-                    Shared Clipboard History ({items.length})
-                  </h2>
+                          <div className="flex-grow text-left overflow-hidden">
+                            <h4 className="font-semibold text-xs text-gray-200 truncate">{item.fileName || 'file'}</h4>
+                            <p className="text-[10px] text-gray-500">{formatBytes(item.fileSize)} • {item.fileType || 'file'}</p>
+                            
+                            <div className="mt-2 flex gap-2">
+                              <a
+                                href={item.content}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="py-1 px-2.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-black border border-emerald-500/20 rounded-md text-[10px] font-semibold text-emerald-400 transition cursor-pointer flex items-center space-x-1"
+                              >
+                                <Download className="w-3 h-3" />
+                                <span>Download</span>
+                              </a>
 
-                  <AnimatePresence initial={false}>
-                    {items.length === 0 ? (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="glass-card rounded-2xl p-8 text-center border border-white/5"
-                      >
-                        <Clipboard className="w-10 h-10 text-gray-500 mx-auto mb-3 opacity-40" />
-                        <p className="text-sm text-gray-400 font-medium">Nothing has been synced to this room yet.</p>
-                        <p className="text-xs text-gray-500 mt-1">Sync text or upload files above to see them instantly on all devices.</p>
-                      </motion.div>
-                    ) : (
-                      items.map((item, index) => (
-                        <motion.div
-                          key={item.id || index}
-                          initial={{ opacity: 0, x: -20, y: 10 }}
-                          animate={{ opacity: 1, x: 0, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                          className="glass-card rounded-2xl p-4 sm:p-5 shadow-lg border border-white/5 relative overflow-hidden"
-                        >
-                          {/* Item card accent color bar */}
-                          <div className={`absolute top-0 left-0 h-full w-1 ${
-                            item.type === 'file' ? 'bg-emerald-400' : 'bg-primary'
-                          }`} />
-
-                          <div className="flex justify-between items-center mb-3 text-xs text-gray-400 ml-1">
-                            <span className="font-semibold text-gray-400">
-                              {item.type === 'file' ? '📁 Attached File' : '📝 Text Clipboard'}
-                            </span>
-                            <span>
-                              {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-
-                          {/* Content Display */}
-                          {item.type === 'text' ? (
-                            <div className="relative">
-                              <pre className="whitespace-pre-wrap font-mono text-sm bg-[#050609] p-4 rounded-xl border border-white/5 text-left text-gray-200 overflow-x-auto select-text break-all">
-                                {item.content}
-                              </pre>
-                              
                               <button
                                 onClick={() => copyToClipboard(item.content, item.id)}
-                                className={`absolute top-3 right-3 p-2 rounded-lg bg-neutral-900/90 text-gray-400 hover:text-white transition border border-white/10 hover:border-white/20 cursor-pointer shadow-md flex items-center justify-center`}
-                                title="Copy contents"
+                                className="py-1 px-2.5 bg-white/5 hover:bg-white/10 rounded-md text-[10px] text-gray-300 transition cursor-pointer flex items-center space-x-1"
                               >
                                 {copiedId === item.id ? (
-                                  <Check className="w-4 h-4 text-emerald-400" />
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-emerald-400">Copied!</span>
+                                  </>
                                 ) : (
-                                  <Copy className="w-4 h-4" />
+                                  <>
+                                    <Link className="w-3 h-3" />
+                                    <span>Copy URL</span>
+                                  </>
                                 )}
                               </button>
                             </div>
-                          ) : (
-                            /* File Display Layout */
-                            <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-4 bg-[#050609] p-4 rounded-xl border border-white/5">
-                              {/* Preview Column */}
-                              {isImage(item.fileType, item.fileName) ? (
-                                <a 
-                                  href={item.content} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="w-full sm:w-28 h-28 rounded-lg overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center group flex-shrink-0 cursor-zoom-in"
-                                >
-                                  <img 
-                                    src={item.content} 
-                                    alt={item.fileName} 
-                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                                  />
-                                </a>
-                              ) : (
-                                <div className="w-20 h-20 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
-                                  <FileText className="w-10 h-10" />
-                                </div>
-                              )}
-
-                              {/* Details Column */}
-                              <div className="flex-grow text-left w-full overflow-hidden">
-                                <h4 className="font-semibold text-sm text-gray-200 truncate">{item.fileName || 'Unnamed File'}</h4>
-                                <p className="text-xs text-gray-400 mt-1">{formatBytes(item.fileSize)} • {item.fileType || 'Unknown Type'}</p>
-                                
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                  <a
-                                    href={item.content}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500 hover:text-black border border-emerald-500/30 rounded-lg text-xs font-semibold text-emerald-400 transition cursor-pointer flex items-center space-x-1.5"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Download</span>
-                                  </a>
-
-                                  <button
-                                    onClick={() => copyToClipboard(item.content, item.id)}
-                                    className="py-1.5 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-gray-300 transition cursor-pointer flex items-center space-x-1.5"
-                                  >
-                                    {copiedId === item.id ? (
-                                      <>
-                                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                        <span className="text-emerald-400">URL Copied!</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Link className="w-3.5 h-3.5" />
-                                        <span>Copy Link</span>
-                                      </>
-                                    )}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
-                </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.main>
+            </div>
 
-      {/* QR Code sharing Modal overlay */}
-      <AnimatePresence>
-        {showQRModal && roomCode && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 z-50"
-            onClick={() => setShowQRModal(false)}
+          </div>
+        </main>
+      )}
+
+      {/* QR sharing Modal */}
+      {showQRModal && roomCode && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition"
+          onClick={() => setShowQRModal(false)}
+        >
+          <div
+            className="glass-card max-w-xs w-full rounded-xl p-5 shadow-2xl relative border border-white/10 text-center"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0.92, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.92, y: 20 }}
-              className="glass-card max-w-sm w-full rounded-2xl p-6 shadow-2xl relative border border-white/10 text-center"
-              onClick={(e) => e.stopPropagation()}
+            <button 
+              onClick={() => setShowQRModal(false)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-white cursor-pointer"
             >
-              <button 
-                onClick={() => setShowQRModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              
-              <div className="mb-4 text-primary mx-auto w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                <Smartphone className="w-6 h-6 text-glow-primary" />
-              </div>
-              
-              <h3 className="text-lg font-bold text-white mb-1">Bridge Connection</h3>
-              <p className="text-xs text-gray-400 mb-6 px-4">
-                Scan the QR code below using your phone's camera to join this room instantly.
-              </p>
+              <X className="w-4 h-4" />
+            </button>
+            
+            <div className="mb-3 text-primary mx-auto w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+              <Smartphone className="w-5 h-5 text-primary" />
+            </div>
+            
+            <h3 className="text-sm font-bold text-white mb-1">Bridge Connection</h3>
+            <p className="text-[10px] text-gray-400 mb-4 px-2">
+              Scan with your phone's camera to join this room instantly.
+            </p>
 
-              {/* QR Container */}
-              <div className="bg-white p-4 rounded-2xl inline-block shadow-inner mb-6">
-                <QRCodeSVG 
-                  value={`${window.location.origin}/room/${roomCode}`}
-                  size={200}
-                  level="M"
-                  includeMargin={false}
-                />
-              </div>
+            <div className="bg-white p-3 rounded-lg inline-block shadow-inner mb-4">
+              <QRCodeSVG 
+                value={`${window.location.origin}/room/${roomCode}`}
+                size={160}
+                level="M"
+              />
+            </div>
 
-              {/* Room Details in Modal */}
-              <div className="bg-[#050609] p-3 rounded-lg border border-white/5 mb-2 font-mono flex items-center justify-between px-4">
-                <span className="text-xs text-gray-500">Room Code</span>
-                <span className="text-lg font-bold text-white tracking-widest">{roomCode}</span>
-              </div>
-              
-              <p className="text-[10px] text-gray-500 leading-tight">
-                No passwords required. Sockets will bridge instantly upon join.
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="bg-[#050609] p-2.5 rounded-lg border border-white/5 font-mono flex items-center justify-between px-3">
+              <span className="text-[9px] text-gray-500">Room Code</span>
+              <span className="text-md font-bold text-white tracking-widest">{roomCode}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Footer */}
-      <footer className="mt-10 py-6 text-center text-xs text-gray-500 border-t border-white/5 z-10 bg-black/10">
-        <p>© 2026 Secure Ephemeral Clipboard & File Relay • Developed for shared workspace security.</p>
+      <footer className="py-6 text-center text-[10px] text-gray-600 border-t border-white/5 z-10 bg-black/10">
+        <p>© 2026 Secure Ephemeral Clipboard & File Relay • Optimized for speed and safety.</p>
       </footer>
     </div>
   );

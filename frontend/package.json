@@ -10,15 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@react-three/fiber": "^9.6.1",
     "canvas-confetti": "^1.9.3",
-    "framer-motion": "^11.18.2",
+    "framer-motion": "^12.40.0",
     "lucide-react": "^0.475.0",
     "qrcode.react": "^3.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "socket.io-client": "^4.7.5",
-    "three": "^0.184.0"
+    "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
